@@ -92,6 +92,15 @@ function generateDefinitionFile(
     defFile.saveSync();
 }
 
+function safeImportAdd(
+    array: Array<OptionalKind<ImportDeclarationStructure>>,
+    value: OptionalKind<ImportDeclarationStructure>
+) {
+    if (!array.some((i) => i.moduleSpecifier === value.moduleSpecifier)) {
+        array.push(value);
+    }
+}
+
 export async function generate(
     parsedWsdl: ParsedWsdl,
     outDir: string,
@@ -137,19 +146,18 @@ export async function generate(
                         [method.paramDefinition.name],
                         allDefintions
                     );
-                    clientImports.push({
-                        moduleSpecifier: `./definitions/${method.paramDefinition.name}`,
-                        namedImports: [{ name: method.paramDefinition.name }],
-                    });
-                    portImports.push({
-                        moduleSpecifier: path.join(
-                            "..",
-                            "definitions",
-                            method.paramDefinition.name
-                        ),
-                        namedImports: [{ name: method.paramDefinition.name }],
-                    });
                 }
+
+                safeImportAdd(clientImports, {
+                    moduleSpecifier: `./definitions/${method.paramDefinition.name}`,
+                    namedImports: [{ name: method.paramDefinition.name }],
+                });
+
+                safeImportAdd(portImports, {
+                    moduleSpecifier: path.join("..", "definitions", method.paramDefinition.name),
+                    namedImports: [{ name: method.paramDefinition.name }],
+                });
+
                 if (
                     method.returnDefinition !== null &&
                     !allDefintions.includes(method.returnDefinition)
@@ -161,19 +169,18 @@ export async function generate(
                         [method.returnDefinition.name],
                         allDefintions
                     );
-                    clientImports.push({
-                        moduleSpecifier: `./definitions/${method.returnDefinition.name}`,
-                        namedImports: [{ name: method.returnDefinition.name }],
-                    });
-                    portImports.push({
-                        moduleSpecifier: path.join(
-                            "..",
-                            "definitions",
-                            method.returnDefinition.name
-                        ),
-                        namedImports: [{ name: method.returnDefinition.name }],
-                    });
                 }
+
+                safeImportAdd(clientImports, {
+                    moduleSpecifier: `./definitions/${method.returnDefinition.name}`,
+                    namedImports: [{ name: method.returnDefinition.name }],
+                });
+
+                safeImportAdd(portImports, {
+                    moduleSpecifier: path.join("..", "definitions", method.returnDefinition.name),
+                    namedImports: [{ name: method.returnDefinition.name }],
+                });
+
                 // TODO: Deduplicate PortMethods
                 allMethods.push(method);
                 portFileMethods.push({
@@ -193,6 +200,7 @@ export async function generate(
                     returnType: method.returnDefinition ? method.returnDefinition.name : "void",
                 });
             } // End of PortMethod
+
             if (!options.emitDefinitionsOnly) {
                 serviceImports.push({
                     moduleSpecifier: path.join("..", "ports", port.name),

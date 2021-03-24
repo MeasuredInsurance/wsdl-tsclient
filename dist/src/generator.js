@@ -101,6 +101,11 @@ function generateDefinitionFile(project, definition, defDir, stack, generated) {
     logger_1.Logger.log("Writing Definition file: " + path_1.default.resolve(path_1.default.join(defDir, defName)) + ".ts");
     defFile.saveSync();
 }
+function safeImportAdd(array, value) {
+    if (!array.some(function (i) { return i.moduleSpecifier === value.moduleSpecifier; })) {
+        array.push(value);
+    }
+}
 function generate(parsedWsdl, outDir, options) {
     return __awaiter(this, void 0, void 0, function () {
         var project, portsDir, servicesDir, defDir, allMethods, allDefintions, clientImports, clientServices, _i, _a, service, serviceFilePath, serviceFile, serviceImports, servicePorts, _b, _c, port, portFilePath, portFile, portImports, portFileMethods, _d, _e, method, clientFilePath, clientFile, createClientDeclaration, indexFilePath, indexFile;
@@ -135,27 +140,27 @@ function generate(parsedWsdl, outDir, options) {
                         if (method.paramDefinition !== null &&
                             !allDefintions.includes(method.paramDefinition)) {
                             generateDefinitionFile(project, method.paramDefinition, defDir, [method.paramDefinition.name], allDefintions);
-                            clientImports.push({
-                                moduleSpecifier: "./definitions/" + method.paramDefinition.name,
-                                namedImports: [{ name: method.paramDefinition.name }],
-                            });
-                            portImports.push({
-                                moduleSpecifier: path_1.default.join("..", "definitions", method.paramDefinition.name),
-                                namedImports: [{ name: method.paramDefinition.name }],
-                            });
                         }
+                        safeImportAdd(clientImports, {
+                            moduleSpecifier: "./definitions/" + method.paramDefinition.name,
+                            namedImports: [{ name: method.paramDefinition.name }],
+                        });
+                        safeImportAdd(portImports, {
+                            moduleSpecifier: path_1.default.join("..", "definitions", method.paramDefinition.name),
+                            namedImports: [{ name: method.paramDefinition.name }],
+                        });
                         if (method.returnDefinition !== null &&
                             !allDefintions.includes(method.returnDefinition)) {
                             generateDefinitionFile(project, method.returnDefinition, defDir, [method.returnDefinition.name], allDefintions);
-                            clientImports.push({
-                                moduleSpecifier: "./definitions/" + method.returnDefinition.name,
-                                namedImports: [{ name: method.returnDefinition.name }],
-                            });
-                            portImports.push({
-                                moduleSpecifier: path_1.default.join("..", "definitions", method.returnDefinition.name),
-                                namedImports: [{ name: method.returnDefinition.name }],
-                            });
                         }
+                        safeImportAdd(clientImports, {
+                            moduleSpecifier: "./definitions/" + method.returnDefinition.name,
+                            namedImports: [{ name: method.returnDefinition.name }],
+                        });
+                        safeImportAdd(portImports, {
+                            moduleSpecifier: path_1.default.join("..", "definitions", method.returnDefinition.name),
+                            namedImports: [{ name: method.returnDefinition.name }],
+                        });
                         // TODO: Deduplicate PortMethods
                         allMethods.push(method);
                         portFileMethods.push({
