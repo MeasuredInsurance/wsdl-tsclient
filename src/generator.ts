@@ -25,7 +25,7 @@ function createProperty(
 ): PropertySignatureStructure {
     return {
         kind: StructureKind.PropertySignature,
-        name: camelCase(name),
+        name: camelCase(name, { preserveConsecutiveUppercase: true }),
         docs: [doc],
         hasQuestionToken: true,
         type: isArray ? `Array<${type}>` : type,
