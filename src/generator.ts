@@ -25,7 +25,7 @@ function createProperty(
 ): PropertySignatureStructure {
     return {
         kind: StructureKind.PropertySignature,
-        name: camelCase(name, { preserveConsecutiveUppercase: true }),
+        name, // camelCase(name, { preserveConsecutiveUppercase: true }),
         docs: [doc],
         hasQuestionToken: true,
         type: isArray ? `Array<${type}>` : type,
@@ -92,7 +92,7 @@ function generateDefinitionFile(
     defFile.saveSync();
 }
 
-function safeImportAdd(
+function pushIfNotExist(
     array: Array<OptionalKind<ImportDeclarationStructure>>,
     value: OptionalKind<ImportDeclarationStructure>
 ) {
@@ -148,12 +148,12 @@ export async function generate(
                     );
                 }
 
-                safeImportAdd(clientImports, {
+                pushIfNotExist(clientImports, {
                     moduleSpecifier: `./definitions/${method.paramDefinition.name}`,
                     namedImports: [{ name: method.paramDefinition.name }],
                 });
 
-                safeImportAdd(portImports, {
+                pushIfNotExist(portImports, {
                     moduleSpecifier: path.join("..", "definitions", method.paramDefinition.name),
                     namedImports: [{ name: method.paramDefinition.name }],
                 });
@@ -171,12 +171,12 @@ export async function generate(
                     );
                 }
 
-                safeImportAdd(clientImports, {
+                pushIfNotExist(clientImports, {
                     moduleSpecifier: `./definitions/${method.returnDefinition.name}`,
                     namedImports: [{ name: method.returnDefinition.name }],
                 });
 
-                safeImportAdd(portImports, {
+                pushIfNotExist(portImports, {
                     moduleSpecifier: path.join("..", "definitions", method.returnDefinition.name),
                     namedImports: [{ name: method.returnDefinition.name }],
                 });

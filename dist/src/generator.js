@@ -53,7 +53,7 @@ function createProperty(name, type, doc, isArray, optional) {
     if (optional === void 0) { optional = true; }
     return {
         kind: ts_morph_1.StructureKind.PropertySignature,
-        name: camelcase_1.default(name, { preserveConsecutiveUppercase: true }),
+        name: name,
         docs: [doc],
         hasQuestionToken: true,
         type: isArray ? "Array<" + type + ">" : type,
@@ -101,7 +101,7 @@ function generateDefinitionFile(project, definition, defDir, stack, generated) {
     logger_1.Logger.log("Writing Definition file: " + path_1.default.resolve(path_1.default.join(defDir, defName)) + ".ts");
     defFile.saveSync();
 }
-function safeImportAdd(array, value) {
+function pushIfNotExist(array, value) {
     if (!array.some(function (i) { return i.moduleSpecifier === value.moduleSpecifier; })) {
         array.push(value);
     }
@@ -141,11 +141,11 @@ function generate(parsedWsdl, outDir, options) {
                             !allDefintions.includes(method.paramDefinition)) {
                             generateDefinitionFile(project, method.paramDefinition, defDir, [method.paramDefinition.name], allDefintions);
                         }
-                        safeImportAdd(clientImports, {
+                        pushIfNotExist(clientImports, {
                             moduleSpecifier: "./definitions/" + method.paramDefinition.name,
                             namedImports: [{ name: method.paramDefinition.name }],
                         });
-                        safeImportAdd(portImports, {
+                        pushIfNotExist(portImports, {
                             moduleSpecifier: path_1.default.join("..", "definitions", method.paramDefinition.name),
                             namedImports: [{ name: method.paramDefinition.name }],
                         });
@@ -153,11 +153,11 @@ function generate(parsedWsdl, outDir, options) {
                             !allDefintions.includes(method.returnDefinition)) {
                             generateDefinitionFile(project, method.returnDefinition, defDir, [method.returnDefinition.name], allDefintions);
                         }
-                        safeImportAdd(clientImports, {
+                        pushIfNotExist(clientImports, {
                             moduleSpecifier: "./definitions/" + method.returnDefinition.name,
                             namedImports: [{ name: method.returnDefinition.name }],
                         });
-                        safeImportAdd(portImports, {
+                        pushIfNotExist(portImports, {
                             moduleSpecifier: path_1.default.join("..", "definitions", method.returnDefinition.name),
                             namedImports: [{ name: method.returnDefinition.name }],
                         });
