@@ -182,7 +182,10 @@ export async function generate(
                 });
 
                 // TODO: Deduplicate PortMethods
-                allMethods.push(method);
+                if (!allMethods.some((i) => i.name === method.name)) {
+                    allMethods.push(method);
+                }
+
                 portFileMethods.push({
                     name: method.paramName,
                     parameters: [

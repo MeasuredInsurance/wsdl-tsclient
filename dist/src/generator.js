@@ -108,7 +108,7 @@ function pushIfNotExist(array, value) {
 }
 function generate(parsedWsdl, outDir, options) {
     return __awaiter(this, void 0, void 0, function () {
-        var project, portsDir, servicesDir, defDir, allMethods, allDefintions, clientImports, clientServices, _i, _a, service, serviceFilePath, serviceFile, serviceImports, servicePorts, _b, _c, port, portFilePath, portFile, portImports, portFileMethods, _d, _e, method, clientFilePath, clientFile, createClientDeclaration, indexFilePath, indexFile;
+        var project, portsDir, servicesDir, defDir, allMethods, allDefintions, clientImports, clientServices, _i, _a, service, serviceFilePath, serviceFile, serviceImports, servicePorts, _b, _c, port, portFilePath, portFile, portImports, portFileMethods, _loop_1, _d, _e, method, clientFilePath, clientFile, createClientDeclaration, indexFilePath, indexFile;
         return __generator(this, function (_f) {
             project = new ts_morph_1.Project();
             portsDir = path_1.default.join(outDir, "ports");
@@ -134,8 +134,7 @@ function generate(parsedWsdl, outDir, options) {
                     });
                     portImports = [];
                     portFileMethods = [];
-                    for (_d = 0, _e = port.methods; _d < _e.length; _d++) {
-                        method = _e[_d];
+                    _loop_1 = function (method) {
                         // TODO: Deduplicate PortImports
                         if (method.paramDefinition !== null &&
                             !allDefintions.includes(method.paramDefinition)) {
@@ -162,7 +161,9 @@ function generate(parsedWsdl, outDir, options) {
                             namedImports: [{ name: method.returnDefinition.name }],
                         });
                         // TODO: Deduplicate PortMethods
-                        allMethods.push(method);
+                        if (!allMethods.some(function (i) { return i.name === method.name; })) {
+                            allMethods.push(method);
+                        }
                         portFileMethods.push({
                             name: method.paramName,
                             parameters: [
@@ -177,6 +178,10 @@ function generate(parsedWsdl, outDir, options) {
                             ],
                             returnType: method.returnDefinition ? method.returnDefinition.name : "void",
                         });
+                    };
+                    for (_d = 0, _e = port.methods; _d < _e.length; _d++) {
+                        method = _e[_d];
+                        _loop_1(method);
                     } // End of PortMethod
                     if (!options.emitDefinitionsOnly) {
                         serviceImports.push({
