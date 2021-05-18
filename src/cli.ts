@@ -1,70 +1,67 @@
 #!/usr/bin/env node
-import yargs from "yargs-parser";
+import yargs from "yargs";
 import path from "path";
 import { Logger } from "./utils/logger";
 import { parseAndGenerate, Options } from "./index";
 import packageJson from "../package.json";
 
-type Config = {
-    _: any[];
-    h?: boolean;
-    help?: boolean;
-    o?: string;
-    v?: boolean;
-    version?: boolean;
-    "no-color"?: boolean;
-    quiet?: boolean;
-    verbose?: boolean;
-    emitDefinitionsOnly?: boolean;
-    modelNamePrefix?: string;
-    modelNameSuffix?: string;
-};
+const conf = yargs(process.argv.slice(2))
+    .version(packageJson.version)
+    .usage("wsdl-tsclient [options] [path]")
+    .example("", "wsdl-tsclient file.wsdl -o ./generated/")
+    .example("", "wsdl-tsclient ./res/**/*.wsdl -o ./generated/")
+    .demandOption(["o"])
+    .option("o", {
+        type: "string",
+        description: "Output directory",
+    })
+    .option("version", {
+        alias: "v",
+        type: "boolean",
+    })
+    .option("emitDefinitionsOnly", {
+        type: "boolean",
+        description: "Generate only Definitions",
+    })
+    .option("modelNamePreffix", {
+        type: "string",
+        description: "Prefix for generated interface names",
+    })
+    .option("modelNameSuffix", {
+        type: "string",
+        description: "Suffix for generated interface names",
+    })
+    .option("quiet", {
+        type: "boolean",
+        description: "Suppress logs",
+    })
+    .option("verbose", {
+        type: "boolean",
+        description: "Print verbose logs",
+    })
+    .option("no-color", {
+        type: "boolean",
+        description: "Logs without colors",
+    }).argv;
 
-const conf: Config = yargs(process.argv.slice(2)) as any;
-if (conf.h || conf.help) {
-    process.stdout.write(`Version: ${packageJson.version}\n`);
-    process.stdout.write("Syntax: wsdl-tsclient [options] [path]\n");
-    process.stdout.write("\n");
-    process.stdout.write("Example: wsdl-tsclient file.wsdl -o ./generated/\n");
-    process.stdout.write("\t wsdl-tsclient ./res/**/*.wsdl -o ./generated/\n");
-    process.stdout.write("\n");
-    process.stdout.write("Options:\n");
-    // process.stdout.write("\tWSDL_PATH\tpath to your wsdl file(s)\n");
-    process.stdout.write("\t-o\t\t\tOutput dir\n");
-    process.stdout.write("\t-h, --help\t\tPrint this message\n");
-    process.stdout.write("\t-v, --version\t\tPrint version\n");
-    process.stdout.write("\t--emitDefinitionsOnly\tGenerate only Definitions\n");
-    process.stdout.write("\t--modelNamePreffix\n");
-    process.stdout.write("\t--modelNameSuffix\n");
-    process.stdout.write("\t--quiet\t\t\tSuppress logs\n");
-    process.stdout.write("\t--verbose\t\tPrint verbose logs\n");
-    process.stdout.write("\t--no-color\t\tLogs without colors\n");
-    // TODO: Finish --js
-    process.exit(0);
-}
+// Logger section
 
-if (conf.v || conf.version) {
-    Logger.log(`${packageJson.version}\n`);
-    process.exit(0);
-}
-
-//
-
-if (conf["no-color"]) {
+if (conf["no-color"] || process.env.NO_COLOR) {
     Logger.colors = false;
 }
 
-if (conf.verbose) {
+if (conf.verbose || process.env.DEBUG) {
     Logger.isDebug = true;
 }
 
 if (conf.quiet) {
     Logger.isDebug = false;
     Logger.isInfo = false;
+    Logger.isWarn = false;
     Logger.isError = false;
 }
 
-//
+// Options override section
 
 const options: Partial<Options> = {};
 
@@ -72,18 +69,20 @@ if (conf.emitDefinitionsOnly) {
     options.emitDefinitionsOnly = true;
 }
 
-if (conf.modelNamePrefix) {
-    options.modelNamePreffix = conf.modelNamePrefix;
+if (conf.modelNamePreffix) {
+    options.modelNamePreffix = conf.modelNamePreffix;
 }
 
 if (conf.modelNameSuffix) {
     options.modelNameSuffix = conf.modelNameSuffix;
 }
+Logger.debug("Options");
+Logger.debug(JSON.stringify(options, null, 2));
 
 //
 
 if (conf._ === undefined || conf._.length === 0) {
-    Logger.error("Node wsdl files found");
+    Logger.error("No WSDL files found");
     Logger.debug(`Path: ${conf._}`);
     process.exit(1);
 }
@@ -95,8 +94,8 @@ if (conf._ === undefined || conf._.length === 0) {
     } else {
         const outDir = path.resolve(conf.o);
 
-        let errorOccured = false;
-        const matches = conf._;
+        let errorsCount = 0;
+        const matches = conf._ as string[];
 
         if (matches.length > 1) {
             Logger.debug(matches.map((m) => path.resolve(m)).join("\n"));
@@ -111,10 +110,11 @@ if (conf._ === undefined || conf._.length === 0) {
             } catch (err) {
                 Logger.error(`Error occured while generating client "${wsdlName}"`);
                 Logger.error(`\t${err}`);
-                errorOccured = true;
+                errorsCount += 1;
             }
         }
-        if (errorOccured) {
+        if (errorsCount) {
+            Logger.error(`${errorsCount} Errors occured!`);
             process.exit(1);
         }
     }

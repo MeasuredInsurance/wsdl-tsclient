@@ -1,4 +1,15 @@
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -46,9 +57,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generate = void 0;
 var path_1 = __importDefault(require("path"));
-var camelcase_1 = __importDefault(require("camelcase"));
 var ts_morph_1 = require("ts-morph");
 var logger_1 = require("./utils/logger");
+var defaultOptions = {
+    emitDefinitionsOnly: false
+};
+/**
+ * To avoid duplicated imports
+ */
+function addSafeImport(imports, moduleSpecifier, namedImport) {
+    if (!imports.find(function (imp) { return imp.moduleSpecifier == moduleSpecifier; })) {
+        imports.push({
+            moduleSpecifier: moduleSpecifier,
+            namedImports: [{ name: namedImport }]
+        });
+    }
+}
 function createProperty(name, type, doc, isArray, optional) {
     if (optional === void 0) { optional = true; }
     return {
@@ -60,7 +84,7 @@ function createProperty(name, type, doc, isArray, optional) {
     };
 }
 function generateDefinitionFile(project, definition, defDir, stack, generated) {
-    var defName = camelcase_1.default(definition.name, { pascalCase: true });
+    var defName = definition.name;
     var defFilePath = path_1.default.join(defDir, defName + ".ts");
     var defFile = project.createSourceFile(defFilePath, "", {
         overwrite: true,
@@ -80,10 +104,7 @@ function generateDefinitionFile(project, definition, defDir, stack, generated) {
                 // Wasn't generated yet
                 generateDefinitionFile(project, prop.ref, defDir, __spreadArray(__spreadArray([], stack), [prop.ref.name]), generated);
             }
-            definitionImports.push({
-                moduleSpecifier: "./" + prop.ref.name,
-                namedImports: [{ name: prop.ref.name }],
-            });
+            addSafeImport(definitionImports, "./" + prop.ref.name, prop.ref.name);
             definitionProperties.push(createProperty(prop.name, prop.ref.name, prop.sourceName, prop.isArray));
         }
     }
@@ -108,14 +129,15 @@ function pushIfNotExist(array, value) {
 }
 function generate(parsedWsdl, outDir, options) {
     return __awaiter(this, void 0, void 0, function () {
-        var project, portsDir, servicesDir, defDir, allMethods, allDefintions, clientImports, clientServices, _i, _a, service, serviceFilePath, serviceFile, serviceImports, servicePorts, _b, _c, port, portFilePath, portFile, portImports, portFileMethods, _loop_1, _d, _e, method, clientFilePath, clientFile, createClientDeclaration, indexFilePath, indexFile;
+        var mergedOptions, project, portsDir, servicesDir, defDir, allMethods, allDefinitions, clientImports, clientServices, _i, _a, service, serviceFilePath, serviceFile, serviceImports, servicePorts, _b, _c, port, portFilePath, portFile, portImports, portFileMethods, _loop_1, _d, _e, method, clientFilePath, clientFile, createClientDeclaration, indexFilePath, indexFile;
         return __generator(this, function (_f) {
+            mergedOptions = __assign(__assign({}, defaultOptions), options);
             project = new ts_morph_1.Project();
             portsDir = path_1.default.join(outDir, "ports");
             servicesDir = path_1.default.join(outDir, "services");
             defDir = path_1.default.join(outDir, "definitions");
             allMethods = [];
-            allDefintions = [];
+            allDefinitions = [];
             clientImports = [];
             clientServices = [];
             for (_i = 0, _a = parsedWsdl.services; _i < _a.length; _i++) {
@@ -136,21 +158,21 @@ function generate(parsedWsdl, outDir, options) {
                     portFileMethods = [];
                     _loop_1 = function (method) {
                         // TODO: Deduplicate PortImports
-                        if (method.paramDefinition !== null &&
-                            !allDefintions.includes(method.paramDefinition)) {
-                            generateDefinitionFile(project, method.paramDefinition, defDir, [method.paramDefinition.name], allDefintions);
+                        if (method.paramDefinition !== null) {
+                            if (!allDefinitions.includes(method.paramDefinition)) {
+                                // Definition is not generated
+                                generateDefinitionFile(project, method.paramDefinition, defDir, [method.paramDefinition.name], allDefinitions);
+                                addSafeImport(clientImports, "./definitions/" + method.paramDefinition.name, method.paramDefinition.name);
+                            }
+                            addSafeImport(portImports, "../definitions/" + method.paramDefinition.name, method.paramDefinition.name);
                         }
-                        pushIfNotExist(clientImports, {
-                            moduleSpecifier: "./definitions/" + method.paramDefinition.name,
-                            namedImports: [{ name: method.paramDefinition.name }],
-                        });
-                        pushIfNotExist(portImports, {
-                            moduleSpecifier: path_1.default.join("..", "definitions", method.paramDefinition.name),
-                            namedImports: [{ name: method.paramDefinition.name }],
-                        });
-                        if (method.returnDefinition !== null &&
-                            !allDefintions.includes(method.returnDefinition)) {
-                            generateDefinitionFile(project, method.returnDefinition, defDir, [method.returnDefinition.name], allDefintions);
+                        if (method.returnDefinition !== null) {
+                            if (!allDefinitions.includes(method.returnDefinition)) {
+                                // Definition is not generated
+                                generateDefinitionFile(project, method.returnDefinition, defDir, [method.returnDefinition.name], allDefinitions);
+                                addSafeImport(clientImports, "./definitions/" + method.returnDefinition.name, method.returnDefinition.name);
+                            }
+                            addSafeImport(portImports, "../definitions/" + method.returnDefinition.name, method.returnDefinition.name);
                         }
                         pushIfNotExist(clientImports, {
                             moduleSpecifier: "./definitions/" + method.returnDefinition.name,
@@ -165,7 +187,7 @@ function generate(parsedWsdl, outDir, options) {
                             allMethods.push(method);
                         }
                         portFileMethods.push({
-                            name: method.paramName,
+                            name: method.name,
                             parameters: [
                                 {
                                     name: method.paramName,
@@ -173,21 +195,18 @@ function generate(parsedWsdl, outDir, options) {
                                 },
                                 {
                                     name: "callback",
-                                    type: "(err: any, result: " + (method.paramDefinition ? method.paramDefinition.name : "unknown") + ", rawResponse: any, soapHeader: any, rawRequest: any) => void",
+                                    type: "(err: any, result: " + (method.returnDefinition ? method.returnDefinition.name : "unknown") + ", rawResponse: any, soapHeader: any, rawRequest: any) => void", // TODO: Use ts-morph to generate proper type
                                 },
                             ],
-                            returnType: method.returnDefinition ? method.returnDefinition.name : "void",
+                            returnType: "void",
                         });
                     };
                     for (_d = 0, _e = port.methods; _d < _e.length; _d++) {
                         method = _e[_d];
                         _loop_1(method);
                     } // End of PortMethod
-                    if (!options.emitDefinitionsOnly) {
-                        serviceImports.push({
-                            moduleSpecifier: path_1.default.join("..", "ports", port.name),
-                            namedImports: [{ name: port.name }],
-                        });
+                    if (!mergedOptions.emitDefinitionsOnly) {
+                        addSafeImport(serviceImports, "../ports/" + port.name, port.name);
                         servicePorts.push({
                             name: port.name,
                             isReadonly: true,
@@ -207,11 +226,8 @@ function generate(parsedWsdl, outDir, options) {
                         portFile.saveSync();
                     }
                 } // End of Port
-                if (!options.emitDefinitionsOnly) {
-                    clientImports.push({
-                        moduleSpecifier: "./services/" + service.name,
-                        namedImports: [{ name: service.name }],
-                    });
+                if (!mergedOptions.emitDefinitionsOnly) {
+                    addSafeImport(clientImports, "./services/" + service.name, service.name);
                     clientServices.push({ name: service.name, type: service.name });
                     serviceFile.addImportDeclarations(serviceImports);
                     serviceFile.addStatements([
@@ -227,7 +243,7 @@ function generate(parsedWsdl, outDir, options) {
                     serviceFile.saveSync();
                 }
             } // End of Service
-            if (!options.emitDefinitionsOnly) {
+            if (!mergedOptions.emitDefinitionsOnly) {
                 clientFilePath = path_1.default.join(outDir, "client.ts");
                 clientFile = project.createSourceFile(clientFilePath, "", {
                     overwrite: true,
@@ -257,7 +273,7 @@ function generate(parsedWsdl, outDir, options) {
                                     type: method.paramDefinition ? method.paramDefinition.name : "{}",
                                 },
                             ],
-                            returnType: "Promise<" + (method.returnDefinition ? method.returnDefinition.name : "unknown") + ">",
+                            returnType: "Promise<[result: " + (method.returnDefinition ? method.returnDefinition.name : "unknown") + ", rawResponse: any, soapHeader: any, rawRequest: any]>",
                         }); }),
                     },
                 ]);
@@ -282,12 +298,12 @@ function generate(parsedWsdl, outDir, options) {
             indexFile = project.createSourceFile(indexFilePath, "", {
                 overwrite: true,
             });
-            indexFile.addExportDeclarations(allDefintions.map(function (def) { return ({
+            indexFile.addExportDeclarations(allDefinitions.map(function (def) { return ({
                 namedExports: [def.name],
                 moduleSpecifier: "./definitions/" + def.name,
             }); }));
-            if (!options.emitDefinitionsOnly) {
-                // TODO: Aggregate all exports during decleartions generation
+            if (!mergedOptions.emitDefinitionsOnly) {
+                // TODO: Aggregate all exports during declarations generation
                 // https://ts-morph.com/details/exports
                 indexFile.addExportDeclarations([
                     {

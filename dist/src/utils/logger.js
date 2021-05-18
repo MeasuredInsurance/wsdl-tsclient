@@ -9,6 +9,13 @@ var supports_color_1 = __importDefault(require("supports-color"));
 var Logger = /** @class */ (function () {
     function Logger() {
     }
+    Logger.disabled = function () {
+        Logger.isDebug = false;
+        Logger.isLog = false;
+        Logger.isInfo = false;
+        Logger.isWarn = false;
+        Logger.isError = false;
+    };
     Logger.debug = function (str) {
         if (Logger.isDebug) {
             if (Logger.colors && supports_color_1.default.stdout) {
@@ -34,6 +41,16 @@ var Logger = /** @class */ (function () {
             }
         }
     };
+    Logger.warn = function (str) {
+        if (Logger.isWarn) {
+            if (Logger.colors && supports_color_1.default.stdout) {
+                console.log(chalk_1.default.yellow(str));
+            }
+            else {
+                console.log(str);
+            }
+        }
+    };
     Logger.error = function (str) {
         if (Logger.isError) {
             if (Logger.colors && supports_color_1.default.stderr) {
@@ -47,6 +64,7 @@ var Logger = /** @class */ (function () {
     Logger.isDebug = false;
     Logger.isLog = true;
     Logger.isInfo = true;
+    Logger.isWarn = true;
     Logger.isError = true;
     Logger.colors = true;
     return Logger;

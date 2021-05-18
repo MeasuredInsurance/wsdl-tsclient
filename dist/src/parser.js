@@ -1,4 +1,15 @@
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
@@ -66,27 +77,42 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseWsdl = void 0;
 var camelcase_1 = __importDefault(require("camelcase"));
 var path = __importStar(require("path"));
+var elements_1 = require("soap/lib/wsdl/elements");
 var index_1 = require("soap/lib/wsdl/index");
 var parsed_wsdl_1 = require("./models/parsed-wsdl");
 var file_1 = require("./utils/file");
 var javascript_1 = require("./utils/javascript");
 var logger_1 = require("./utils/logger");
+var defaultOptions = {
+    modelNamePreffix: "",
+    modelNameSuffix: ""
+};
 function findReferenceDefiniton(visited, definitionParts) {
     return visited.find(function (def) { return def.parts === definitionParts; });
 }
 /**
  * parse definition
  * @param parsedWsdl context of parsed wsdl
- * @param name name of definition
- * @param defParts definition's parts (its properties from wsdl)
- * @param stack definition stack (for deep objects) (immutable)
- * @param visitedDefs set of visited definition (mutable)
+ * @param name name of definition, will be used as name of interface
+ * @param defParts definition's parts - its properties
+ * @param stack definitions stack of path to current subdefinition (immutable)
+ * @param visitedDefs set of globally visited definitions to avoid circular definitions
  */
 function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs) {
     var defName = camelcase_1.default(name, { pascalCase: true });
+    logger_1.Logger.debug("Parsing Definition " + stack.join(".") + "." + name);
+    var nonCollisionDefName;
+    try {
+        nonCollisionDefName = parsedWsdl.findNonCollisionDefinitionName(defName);
+    }
+    catch (err) {
+        var e = new Error("Error for finding non-collision definition name for " + stack.join(".") + "." + name);
+        e.stack.split('\n').slice(0, 2).join('\n') + '\n' + err.stack;
+        throw e;
+    }
     var definition = {
-        name: "" + options.modelNamePreffix + parsedWsdl.findNonCollisionDefinitionName(defName) + options.modelNameSuffix,
-        sourceName: defName,
+        name: "" + options.modelNamePreffix + camelcase_1.default(nonCollisionDefName, { pascalCase: true }) + options.modelNameSuffix,
+        sourceName: name,
         docs: [name],
         properties: [],
         description: "",
@@ -94,7 +120,7 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
     visitedDefs.push({ name: definition.name, parts: defParts, definition: definition }); // NOTE: cache reference to this defintion globally (for avoiding circular references)
     if (defParts) {
         // NOTE: `node-soap` has sometimes problem with parsing wsdl files, it includes `defParts.undefined = undefined`
-        if ("undefined" in defParts && defParts.undefined === undefined) {
+        if (("undefined" in defParts) && (defParts.undefined === undefined)) {
             // TODO: problem while parsing WSDL, maybe report to node-soap
             // TODO: add flag --FailOnWsdlError
             logger_1.Logger.error({
@@ -107,10 +133,10 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
             Object.entries(defParts).forEach(function (_a) {
                 var propName = _a[0], type = _a[1];
                 if (propName === "targetNSAlias") {
-                    definition.docs.push("targetNSAlias `" + type + "`");
+                    definition.docs.push("@targetNSAlias `" + type + "`");
                 }
                 else if (propName === "targetNamespace") {
-                    definition.docs.push("targetNamespace `" + type + "`");
+                    definition.docs.push("@targetNamespace `" + type + "`");
                 }
                 else if (propName.endsWith("[]")) {
                     var stripedPropName = propName.substring(0, propName.length - 2);
@@ -126,6 +152,18 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
                             isArray: true,
                         });
                     }
+                    else if (type instanceof elements_1.ComplexTypeElement) {
+                        // TODO: Finish complex type parsing by updating node-soap
+                        definition.properties.push({
+                            kind: "PRIMITIVE",
+                            name: stripedPropName,
+                            sourceName: propName,
+                            description: "ComplexType are not supported yet",
+                            type: "any",
+                            isArray: true
+                        });
+                        logger_1.Logger.warn("Cannot parse ComplexType '" + stack.join(".") + "." + name + "' - using 'any' type");
+                    }
                     else {
                         // With sub-type
                         var visited = findReferenceDefiniton(visitedDefs, type);
@@ -140,14 +178,21 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
                             });
                         }
                         else {
-                            var subDefinition = parseDefinition(parsedWsdl, options, stripedPropName, type, __spreadArray(__spreadArray([], stack), [propName]), visitedDefs);
-                            definition.properties.push({
-                                kind: "REFERENCE",
-                                name: stripedPropName,
-                                sourceName: propName,
-                                ref: subDefinition,
-                                isArray: true,
-                            });
+                            try {
+                                var subDefinition = parseDefinition(parsedWsdl, options, stripedPropName, type, __spreadArray(__spreadArray([], stack), [propName]), visitedDefs);
+                                definition.properties.push({
+                                    kind: "REFERENCE",
+                                    name: stripedPropName,
+                                    sourceName: propName,
+                                    ref: subDefinition,
+                                    isArray: true,
+                                });
+                            }
+                            catch (err) {
+                                var e = new Error("Error while parsing Subdefinition for '" + stack.join(".") + "." + name + "'");
+                                e.stack.split('\n').slice(0, 2).join('\n') + '\n' + err.stack;
+                                throw e;
+                            }
                         }
                     }
                 }
@@ -162,6 +207,18 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
                             type: "string",
                             isArray: false,
                         });
+                    }
+                    else if (type instanceof elements_1.ComplexTypeElement) {
+                        // TODO: Finish complex type parsing by updating node-soap
+                        definition.properties.push({
+                            kind: "PRIMITIVE",
+                            name: propName,
+                            sourceName: propName,
+                            description: "ComplexType are not supported yet",
+                            type: "any",
+                            isArray: false
+                        });
+                        logger_1.Logger.warn("Cannot parse ComplexType '" + stack.join(".") + "." + name + "' - using 'any' type");
                     }
                     else {
                         // With sub-type
@@ -178,14 +235,21 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
                             });
                         }
                         else {
-                            var subDefinition = parseDefinition(parsedWsdl, options, propName, type, __spreadArray(__spreadArray([], stack), [propName]), visitedDefs);
-                            definition.properties.push({
-                                kind: "REFERENCE",
-                                name: propName,
-                                sourceName: propName,
-                                ref: subDefinition,
-                                isArray: false,
-                            });
+                            try {
+                                var subDefinition = parseDefinition(parsedWsdl, options, propName, type, __spreadArray(__spreadArray([], stack), [propName]), visitedDefs);
+                                definition.properties.push({
+                                    kind: "REFERENCE",
+                                    name: propName,
+                                    sourceName: propName,
+                                    ref: subDefinition,
+                                    isArray: false,
+                                });
+                            }
+                            catch (err) {
+                                var e = new Error("Error while parsing Subdefinition for " + stack.join(".") + "." + name);
+                                e.stack.split('\n').slice(0, 2).join('\n') + '\n' + err.stack;
+                                throw e;
+                            }
                         }
                     }
                 }
@@ -193,16 +257,21 @@ function parseDefinition(parsedWsdl, options, name, defParts, stack, visitedDefs
         }
     }
     else {
-        // TODO: Doesn't have parts :(
     }
     parsedWsdl.definitions.push(definition);
     return definition;
 }
 // TODO: Add logs
 // TODO: Add comments for services, ports, methods and client
+/**
+ * Parse WSDL to domain model `ParsedWsdl`
+ * @param wsdlPath - path or url to wsdl file
+ */
 function parseWsdl(wsdlPath, options) {
     return __awaiter(this, void 0, void 0, function () {
+        var mergedOptions;
         return __generator(this, function (_a) {
+            mergedOptions = __assign(__assign({}, defaultOptions), options);
             return [2 /*return*/, new Promise(function (resolve, reject) {
                     index_1.open_wsdl(wsdlPath, function (err, wsdl) {
                         var _a, _b, _c;
@@ -212,7 +281,6 @@ function parseWsdl(wsdlPath, options) {
                         if (wsdl === undefined) {
                             return reject(new Error("WSDL is undefined"));
                         }
-                        wsdl.describeServices();
                         var parsedWsdl = new parsed_wsdl_1.ParsedWsdl();
                         var filename = path.basename(wsdlPath);
                         parsedWsdl.name = camelcase_1.default(file_1.stripExtension(filename), {
@@ -226,15 +294,16 @@ function parseWsdl(wsdlPath, options) {
                         var services = [];
                         for (var _i = 0, _d = Object.entries(wsdl.definitions.services); _i < _d.length; _i++) {
                             var _e = _d[_i], serviceName = _e[0], service = _e[1];
+                            logger_1.Logger.debug("Parsing Service " + serviceName);
                             var servicePorts = []; // TODO: Convert to Array
                             for (var _f = 0, _g = Object.entries(service.ports); _f < _g.length; _f++) {
                                 var _h = _g[_f], portName = _h[0], port = _h[1];
-                                // [SI_ManageOrder_O]
+                                logger_1.Logger.debug("Parsing Port " + portName);
                                 var portMethods = [];
                                 for (var _j = 0, _k = Object.entries(port.binding.methods); _j < _k.length; _j++) {
                                     var _l = _k[_j], methodName = _l[0], method = _l[1];
-                                    // [O_CustomerChange]
-                                    // TODO: Deduplicate code below by refactoring it to external function. Is it possible ?
+                                    logger_1.Logger.debug("Parsing Method " + methodName);
+                                    // TODO: Deduplicate code below by refactoring it to external function. Is it even possible ?
                                     var paramName = "request";
                                     var inputDefinition = null; // default type
                                     if (method.input) {
@@ -243,24 +312,39 @@ function parseWsdl(wsdlPath, options) {
                                         }
                                         var inputMessage = wsdl.definitions.messages[method.input.$name];
                                         if (inputMessage.element) {
-                                            // TODO: if $type not defined, inline type into function declartion
+                                            // TODO: if `$type` not defined, inline type into function declartion (do not create definition file) - wsimport
                                             var typeName = (_a = inputMessage.element.$type) !== null && _a !== void 0 ? _a : inputMessage.element.$name;
                                             var type = parsedWsdl.findDefinition((_b = inputMessage.element.$type) !== null && _b !== void 0 ? _b : inputMessage.element.$name);
                                             inputDefinition = type
                                                 ? type
-                                                : parseDefinition(parsedWsdl, options, typeName, inputMessage.parts, [typeName], visitedDefinitions);
+                                                : parseDefinition(parsedWsdl, mergedOptions, typeName, inputMessage.parts, [typeName], visitedDefinitions);
+                                        }
+                                        else if (inputMessage.parts) {
+                                            var type = parsedWsdl.findDefinition(paramName);
+                                            inputDefinition = type
+                                                ? type
+                                                : parseDefinition(parsedWsdl, mergedOptions, paramName, inputMessage.parts, [paramName], visitedDefinitions);
+                                        }
+                                        else {
+                                            logger_1.Logger.debug("Method '" + serviceName + "." + portName + "." + methodName + "' doesn't have any input defined");
                                         }
                                     }
-                                    var outputDefinition = null; // default type
+                                    var outputDefinition = null; // default type, `{}` or `unknown` ?
                                     if (method.output) {
                                         var outputMessage = wsdl.definitions.messages[method.output.$name];
                                         if (outputMessage.element) {
-                                            // TODO: if input doesn't have $type, use $name for definition file
+                                            // TODO: if `$type` not defined, inline type into function declartion (do not create definition file) - wsimport
                                             var typeName = (_c = outputMessage.element.$type) !== null && _c !== void 0 ? _c : outputMessage.element.$name;
                                             var type = parsedWsdl.findDefinition(typeName);
                                             outputDefinition = type
                                                 ? type
-                                                : parseDefinition(parsedWsdl, options, typeName, outputMessage.parts, [typeName], visitedDefinitions);
+                                                : parseDefinition(parsedWsdl, mergedOptions, typeName, outputMessage.parts, [typeName], visitedDefinitions);
+                                        }
+                                        else {
+                                            var type = parsedWsdl.findDefinition(paramName);
+                                            outputDefinition = type
+                                                ? type
+                                                : parseDefinition(parsedWsdl, mergedOptions, paramName, outputMessage.parts, [paramName], visitedDefinitions);
                                         }
                                     }
                                     var camelParamName = camelcase_1.default(paramName);

@@ -40,69 +40,84 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-var yargs_parser_1 = __importDefault(require("yargs-parser"));
+var yargs_1 = __importDefault(require("yargs"));
 var path_1 = __importDefault(require("path"));
 var logger_1 = require("./utils/logger");
 var index_1 = require("./index");
 var package_json_1 = __importDefault(require("../package.json"));
-var conf = yargs_parser_1.default(process.argv.slice(2));
-if (conf.h || conf.help) {
-    process.stdout.write("Version: " + package_json_1.default.version + "\n");
-    process.stdout.write("Syntax: wsdl-tsclient [options] [path]\n");
-    process.stdout.write("\n");
-    process.stdout.write("Example: wsdl-tsclient file.wsdl -o ./generated/\n");
-    process.stdout.write("\t wsdl-tsclient ./res/**/*.wsdl -o ./generated/\n");
-    process.stdout.write("\n");
-    process.stdout.write("Options:\n");
-    // process.stdout.write("\tWSDL_PATH\tpath to your wsdl file(s)\n");
-    process.stdout.write("\t-o\t\t\tOutput dir\n");
-    process.stdout.write("\t-h, --help\t\tPrint this message\n");
-    process.stdout.write("\t-v, --version\t\tPrint version\n");
-    process.stdout.write("\t--emitDefinitionsOnly\tGenerate only Definitions\n");
-    process.stdout.write("\t--modelNamePreffix\n");
-    process.stdout.write("\t--modelNameSuffix\n");
-    process.stdout.write("\t--quiet\t\t\tSuppress logs\n");
-    process.stdout.write("\t--verbose\t\tPrint verbose logs\n");
-    process.stdout.write("\t--no-color\t\tLogs without colors\n");
-    // TODO: Finish --js
-    process.exit(0);
-}
-if (conf.v || conf.version) {
-    logger_1.Logger.log(package_json_1.default.version + "\n");
-    process.exit(0);
-}
-//
-if (conf["no-color"]) {
+var conf = yargs_1.default(process.argv.slice(2))
+    .version(package_json_1.default.version)
+    .usage("wsdl-tsclient [options] [path]")
+    .example("", "wsdl-tsclient file.wsdl -o ./generated/")
+    .example("", "wsdl-tsclient ./res/**/*.wsdl -o ./generated/")
+    .demandOption(["o"])
+    .option("o", {
+    type: "string",
+    description: "Output directory",
+})
+    .option("version", {
+    alias: "v",
+    type: "boolean",
+})
+    .option("emitDefinitionsOnly", {
+    type: "boolean",
+    description: "Generate only Definitions",
+})
+    .option("modelNamePreffix", {
+    type: "string",
+    description: "Prefix for generated interface names",
+})
+    .option("modelNameSuffix", {
+    type: "string",
+    description: "Suffix for generated interface names",
+})
+    .option("quiet", {
+    type: "boolean",
+    description: "Suppress logs",
+})
+    .option("verbose", {
+    type: "boolean",
+    description: "Print verbose logs",
+})
+    .option("no-color", {
+    type: "boolean",
+    description: "Logs without colors",
+}).argv;
+// Logger section
+if (conf["no-color"] || process.env.NO_COLOR) {
     logger_1.Logger.colors = false;
 }
-if (conf.verbose) {
+if (conf.verbose || process.env.DEBUG) {
     logger_1.Logger.isDebug = true;
 }
 if (conf.quiet) {
     logger_1.Logger.isDebug = false;
     logger_1.Logger.isInfo = false;
+    logger_1.Logger.isWarn = false;
     logger_1.Logger.isError = false;
 }
-//
+// Options override section
 var options = {};
 if (conf.emitDefinitionsOnly) {
     options.emitDefinitionsOnly = true;
 }
-if (conf.modelNamePrefix) {
-    options.modelNamePreffix = conf.modelNamePrefix;
+if (conf.modelNamePreffix) {
+    options.modelNamePreffix = conf.modelNamePreffix;
 }
 if (conf.modelNameSuffix) {
     options.modelNameSuffix = conf.modelNameSuffix;
 }
+logger_1.Logger.debug("Options");
+logger_1.Logger.debug(JSON.stringify(options, null, 2));
 //
 if (conf._ === undefined || conf._.length === 0) {
-    logger_1.Logger.error("Node wsdl files found");
+    logger_1.Logger.error("No WSDL files found");
     logger_1.Logger.debug("Path: " + conf._);
     process.exit(1);
 }
 (function () {
     return __awaiter(this, void 0, void 0, function () {
-        var outDir, errorOccured, matches, _i, matches_1, match, wsdlPath, wsdlName, err_1;
+        var outDir, errorsCount, matches, _i, matches_1, match, wsdlPath, wsdlName, err_1;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -112,7 +127,7 @@ if (conf._ === undefined || conf._.length === 0) {
                     return [3 /*break*/, 8];
                 case 1:
                     outDir = path_1.default.resolve(conf.o);
-                    errorOccured = false;
+                    errorsCount = 0;
                     matches = conf._;
                     if (matches.length > 1) {
                         logger_1.Logger.debug(matches.map(function (m) { return path_1.default.resolve(m); }).join("\n"));
@@ -137,13 +152,14 @@ if (conf._ === undefined || conf._.length === 0) {
                     err_1 = _a.sent();
                     logger_1.Logger.error("Error occured while generating client \"" + wsdlName + "\"");
                     logger_1.Logger.error("\t" + err_1);
-                    errorOccured = true;
+                    errorsCount += 1;
                     return [3 /*break*/, 6];
                 case 6:
                     _i++;
                     return [3 /*break*/, 2];
                 case 7:
-                    if (errorOccured) {
+                    if (errorsCount) {
+                        logger_1.Logger.error(errorsCount + " Errors occured!");
                         process.exit(1);
                     }
                     _a.label = 8;

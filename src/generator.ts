@@ -6,14 +6,29 @@ import {
     OptionalKind,
     Project,
     PropertySignatureStructure,
-    Structure,
     StructureKind,
 } from "ts-morph";
 import { Definition, Method, ParsedWsdl } from "./models/parsed-wsdl";
 import { Logger } from "./utils/logger";
 
-export interface Options {
+export interface GeneratorOptions {
     emitDefinitionsOnly: boolean;
+}
+
+const defaultOptions: GeneratorOptions = {
+    emitDefinitionsOnly: false
+};
+
+/**
+ * To avoid duplicated imports
+ */
+function addSafeImport(imports: OptionalKind<ImportDeclarationStructure>[], moduleSpecifier: string, namedImport: string) {
+    if (!imports.find(imp => imp.moduleSpecifier == moduleSpecifier)) {
+        imports.push({
+           moduleSpecifier,
+           namedImports: [{ name: namedImport }]
+        });
+    }
 }
 
 function createProperty(
@@ -39,7 +54,7 @@ function generateDefinitionFile(
     stack: string[],
     generated: Definition[]
 ): void {
-    const defName = camelCase(definition.name, { pascalCase: true });
+    const defName = definition.name;
     const defFilePath = path.join(defDir, `${defName}.ts`);
     const defFile = project.createSourceFile(defFilePath, "", {
         overwrite: true,
@@ -52,28 +67,15 @@ function generateDefinitionFile(
     for (const prop of definition.properties) {
         if (prop.kind === "PRIMITIVE") {
             // e.g. string
-            definitionProperties.push(
-                createProperty(prop.name, prop.type, prop.description, prop.isArray)
-            );
+            definitionProperties.push(createProperty(prop.name, prop.type, prop.description, prop.isArray));
         } else if (prop.kind === "REFERENCE") {
             // e.g. Items
             if (!generated.includes(prop.ref)) {
                 // Wasn't generated yet
-                generateDefinitionFile(
-                    project,
-                    prop.ref,
-                    defDir,
-                    [...stack, prop.ref.name],
-                    generated
-                );
+                generateDefinitionFile(project, prop.ref, defDir, [...stack, prop.ref.name], generated);
             }
-            definitionImports.push({
-                moduleSpecifier: `./${prop.ref.name}`,
-                namedImports: [{ name: prop.ref.name }],
-            });
-            definitionProperties.push(
-                createProperty(prop.name, prop.ref.name, prop.sourceName, prop.isArray)
-            );
+            addSafeImport(definitionImports, `./${prop.ref.name}`, prop.ref.name);
+            definitionProperties.push(createProperty(prop.name, prop.ref.name, prop.sourceName, prop.isArray));
         }
     }
 
@@ -101,11 +103,11 @@ function pushIfNotExist(
     }
 }
 
-export async function generate(
-    parsedWsdl: ParsedWsdl,
-    outDir: string,
-    options: Options
-): Promise<void> {
+export async function generate(parsedWsdl: ParsedWsdl, outDir: string, options: Partial<GeneratorOptions>): Promise<void> {
+    const mergedOptions: GeneratorOptions = {
+        ...defaultOptions,
+        ...options
+    };
     const project = new Project();
 
     const portsDir = path.join(outDir, "ports");
@@ -113,7 +115,7 @@ export async function generate(
     const defDir = path.join(outDir, "definitions");
 
     const allMethods: Method[] = [];
-    const allDefintions: Definition[] = [];
+    const allDefinitions: Definition[] = [];
 
     const clientImports: Array<OptionalKind<ImportDeclarationStructure>> = [];
     const clientServices: Array<OptionalKind<PropertySignatureStructure>> = [];
@@ -135,40 +137,33 @@ export async function generate(
             const portFileMethods: Array<OptionalKind<MethodSignatureStructure>> = [];
             for (const method of port.methods) {
                 // TODO: Deduplicate PortImports
-                if (
-                    method.paramDefinition !== null &&
-                    !allDefintions.includes(method.paramDefinition)
-                ) {
-                    generateDefinitionFile(
-                        project,
-                        method.paramDefinition,
-                        defDir,
-                        [method.paramDefinition.name],
-                        allDefintions
-                    );
+                if (method.paramDefinition !== null) {
+                    if (!allDefinitions.includes(method.paramDefinition)) {
+                        // Definition is not generated
+                        generateDefinitionFile(
+                            project,
+                            method.paramDefinition,
+                            defDir,
+                            [method.paramDefinition.name],
+                            allDefinitions
+                        );
+                        addSafeImport(clientImports, `./definitions/${method.paramDefinition.name}`, method.paramDefinition.name);
+                    }
+                    addSafeImport(portImports, `../definitions/${method.paramDefinition.name}`, method.paramDefinition.name);
                 }
-
-                pushIfNotExist(clientImports, {
-                    moduleSpecifier: `./definitions/${method.paramDefinition.name}`,
-                    namedImports: [{ name: method.paramDefinition.name }],
-                });
-
-                pushIfNotExist(portImports, {
-                    moduleSpecifier: path.join("..", "definitions", method.paramDefinition.name),
-                    namedImports: [{ name: method.paramDefinition.name }],
-                });
-
-                if (
-                    method.returnDefinition !== null &&
-                    !allDefintions.includes(method.returnDefinition)
-                ) {
-                    generateDefinitionFile(
-                        project,
-                        method.returnDefinition,
-                        defDir,
-                        [method.returnDefinition.name],
-                        allDefintions
-                    );
+                if (method.returnDefinition !== null) {
+                    if (!allDefinitions.includes(method.returnDefinition)) {
+                        // Definition is not generated
+                        generateDefinitionFile(
+                            project,
+                            method.returnDefinition,
+                            defDir,
+                            [method.returnDefinition.name],
+                            allDefinitions
+                        );
+                        addSafeImport(clientImports, `./definitions/${method.returnDefinition.name}`, method.returnDefinition.name);
+                    }
+                    addSafeImport(portImports, `../definitions/${method.returnDefinition.name}`, method.returnDefinition.name);
                 }
 
                 pushIfNotExist(clientImports, {
@@ -187,7 +182,7 @@ export async function generate(
                 }
 
                 portFileMethods.push({
-                    name: method.paramName,
+                    name: method.name,
                     parameters: [
                         {
                             name: method.paramName,
@@ -196,19 +191,16 @@ export async function generate(
                         {
                             name: "callback",
                             type: `(err: any, result: ${
-                                method.paramDefinition ? method.paramDefinition.name : "unknown"
-                            }, rawResponse: any, soapHeader: any, rawRequest: any) => void`,
+                                method.returnDefinition ? method.returnDefinition.name : "unknown"
+                            }, rawResponse: any, soapHeader: any, rawRequest: any) => void`, // TODO: Use ts-morph to generate proper type
                         },
                     ],
-                    returnType: method.returnDefinition ? method.returnDefinition.name : "void",
+                    returnType: "void",
                 });
             } // End of PortMethod
 
-            if (!options.emitDefinitionsOnly) {
-                serviceImports.push({
-                    moduleSpecifier: path.join("..", "ports", port.name),
-                    namedImports: [{ name: port.name }],
-                });
+            if (!mergedOptions.emitDefinitionsOnly) {
+                addSafeImport(serviceImports, `../ports/${port.name}`, port.name);
                 servicePorts.push({
                     name: port.name,
                     isReadonly: true,
@@ -229,11 +221,8 @@ export async function generate(
             }
         } // End of Port
 
-        if (!options.emitDefinitionsOnly) {
-            clientImports.push({
-                moduleSpecifier: `./services/${service.name}`,
-                namedImports: [{ name: service.name }],
-            });
+        if (!mergedOptions.emitDefinitionsOnly) {
+            addSafeImport(clientImports, `./services/${service.name}`, service.name);
             clientServices.push({ name: service.name, type: service.name });
 
             serviceFile.addImportDeclarations(serviceImports);
@@ -246,14 +235,12 @@ export async function generate(
                     properties: servicePorts,
                 },
             ]);
-            Logger.log(
-                `Writing Service file: ${path.resolve(path.join(servicesDir, service.name))}.ts`
-            );
+            Logger.log(`Writing Service file: ${path.resolve(path.join(servicesDir, service.name))}.ts`);
             serviceFile.saveSync();
         }
     } // End of Service
 
-    if (!options.emitDefinitionsOnly) {
+    if (!mergedOptions.emitDefinitionsOnly) {
         const clientFilePath = path.join(outDir, "client.ts");
         const clientFile = project.createSourceFile(clientFilePath, "", {
             overwrite: true,
@@ -283,9 +270,7 @@ export async function generate(
                             type: method.paramDefinition ? method.paramDefinition.name : "{}",
                         },
                     ],
-                    returnType: `Promise<${
-                        method.returnDefinition ? method.returnDefinition.name : "unknown"
-                    }>`,
+                    returnType: `Promise<[result: ${method.returnDefinition ? method.returnDefinition.name : "unknown"}, rawResponse: any, soapHeader: any, rawRequest: any]>`,
                 })),
             },
         ]);
@@ -302,26 +287,25 @@ export async function generate(
             ],
             returnType: `Promise<${parsedWsdl.name}Client>`, // TODO: `any` keyword is very dangerous
         });
-        createClientDeclaration.setBodyText(
-            "return soapCreateClientAsync(args[0], args[1], args[2]) as any;"
-        );
+        createClientDeclaration.setBodyText("return soapCreateClientAsync(args[0], args[1], args[2]) as any;");
         Logger.log(`Writing Client file: ${path.resolve(path.join(outDir, "client"))}.ts`);
         clientFile.saveSync();
     }
 
+    // Create index file with re-exports
     const indexFilePath = path.join(outDir, "index.ts");
     const indexFile = project.createSourceFile(indexFilePath, "", {
         overwrite: true,
     });
 
     indexFile.addExportDeclarations(
-        allDefintions.map((def) => ({
+        allDefinitions.map((def) => ({
             namedExports: [def.name],
             moduleSpecifier: `./definitions/${def.name}`,
         }))
     );
-    if (!options.emitDefinitionsOnly) {
-        // TODO: Aggregate all exports during decleartions generation
+    if (!mergedOptions.emitDefinitionsOnly) {
+        // TODO: Aggregate all exports during declarations generation
         // https://ts-morph.com/details/exports
         indexFile.addExportDeclarations([
             {
